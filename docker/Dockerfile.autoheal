@@ -2,9 +2,15 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
+# Install dependencies
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+# Copy the whole project
+COPY autoheal/ ./autoheal/
 
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080"]
+# Expose the API port
+EXPOSE 8000
+
+# Start the FastAPI server
+CMD ["uvicorn", "autoheal.api.main:app", "--host", "0.0.0.0", "--port", "8000"]
