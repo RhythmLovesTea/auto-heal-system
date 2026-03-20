@@ -1,0 +1,32 @@
+services:
+  autoheal:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.autoheal
+    container_name: autoheal
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - POLL_INTERVAL=30
+    depends_on:
+      - payments-api
+
+  payments-api:
+    image: python:3.11-slim
+    container_name: payments-api
+    restart: unless-stopped
+    working_dir: /app
+    volumes:
+      - ./payments_api:/app
+    command: >
+      sh -c "pip install fastapi uvicorn --quiet &&
+             uvicorn main:app --host 0.0.0.0 --port 8000"
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
