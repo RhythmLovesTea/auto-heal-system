@@ -3,12 +3,9 @@ import os
 
 app = Flask(__name__)
 
-# This flag is flipped by inject.py to simulate a failure
-UNHEALTHY = False
-
 @app.route("/health")
 def health():
-    if UNHEALTHY:
+    if os.path.exists("/tmp/unhealthy"):
         return jsonify({"status": "unhealthy", "service": "nginx"}), 500
     return jsonify({"status": "healthy", "service": "nginx"}), 200
 

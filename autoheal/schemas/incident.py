@@ -71,3 +71,17 @@ class ContainerHistory(BaseModel):
     container_name: str
     restart_count: int
     incidents: list[Incident]
+from pydantic import BaseModel
+from typing import Optional
+from datetime import datetime
+
+class IncidentOut(BaseModel):
+    id: int
+    service: str
+    status: str
+    root_cause: Optional[str] = None
+    action_taken: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True

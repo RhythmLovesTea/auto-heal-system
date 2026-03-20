@@ -1,5 +1,4 @@
-import { useState, useEffect, useRef } from "react";
-
+import React, { useState, useEffect, useRef } from "react";
 // ─── CONSTANTS ────────────────────────────────────────────────────────────────
 // These match the service names in your docker-compose.yml
 const SERVICE_NAMES = ["auth-service", "payments-api", "db-client", "nginx", "worker"];
@@ -271,7 +270,7 @@ export default function App() {
   // ── Load initial incidents from REST endpoint (on mount) ────────────────────
   // This fills the timeline with history before SSE starts streaming new ones
   useEffect(() => {
-    fetch(`${API_BASE}/incidents?limit=20`)
+	fetch(`${API_BASE}/api/incidents/?limit=20`)
       .then(r => r.json())
       .then(data => {
         // data is an array of incident objects

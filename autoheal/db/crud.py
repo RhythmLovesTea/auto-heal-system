@@ -66,3 +66,10 @@ def get_restart_count(db: Session, container_name: str) -> int:
         )
         .count()
     )
+def get_incidents(db: Session, limit: int = 100, service: str = None, status: str = None) -> list[IncidentRecord]:
+    query = db.query(IncidentRecord).order_by(IncidentRecord.detected_at.desc())
+    if service:
+        query = query.filter(IncidentRecord.container_name == service)
+    if status:
+        query = query.filter(IncidentRecord.heal_status == status)
+    return query.limit(limit).all()

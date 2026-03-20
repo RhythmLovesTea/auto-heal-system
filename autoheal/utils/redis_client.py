@@ -120,3 +120,6 @@ def subscribe() -> redis.client.PubSub:
     ps = get_client().pubsub()
     ps.subscribe(PUBSUB_CHANNEL)
     return ps
+# Alias for compatibility
+async def get_redis():
+    return get_client()

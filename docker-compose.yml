@@ -1,4 +1,3 @@
-version: "3.9"
 
 services:
 
@@ -16,6 +15,7 @@ services:
       - DB_PATH=/data/autoheal.db
     volumes:
       - sqlite_data:/data
+      - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       - redis
       - auth-service

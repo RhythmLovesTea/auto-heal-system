@@ -14,29 +14,28 @@ from fastapi.responses import StreamingResponse
 from autoheal.api.routes import containers, incidents, inject
 from autoheal.db.database import engine, Base
 from autoheal.healer.healer import Healer
-from autoheal.utils.redis_client import get_redis
+from autoheal.utils.redis_client import get_redis, PUBSUB_CHANNEL
 from autoheal.config.settings import settings
 
 
 # ── Lifespan: startup / shutdown ──────────────────────────────────────────────
+from autoheal.monitor.monitor import start_monitor_thread
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Create all DB tables on startup
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    from autoheal.db.database import init_db
+    init_db()
 
-    # Start the Redis-event consumer as a background task
+    # Start the monitor in a background thread
+    start_monitor_thread(interval=10)
+
     task = asyncio.create_task(_redis_event_consumer())
     yield
-    # Shutdown: cancel the background task cleanly
     task.cancel()
     try:
         await task
     except asyncio.CancelledError:
         pass
-
-
 # ── App ───────────────────────────────────────────────────────────────────────
 
 app = FastAPI(
@@ -63,68 +62,63 @@ app.include_router(inject.router,      prefix="/api/inject",      tags=["inject"
 
 @app.get("/stream", summary="Server-Sent Events stream for live incident updates")
 async def stream_events():
-    """
-    Dashboard subscribes here.  Pushes every Redis 'autoheal:events' message
-    straight to the browser as an SSE payload.
-    """
     async def event_generator():
-        redis = await get_redis()
+        import asyncio
+        from autoheal.utils.redis_client import get_client, PUBSUB_CHANNEL
+        loop = asyncio.get_event_loop()
+        redis = get_client()
         pubsub = redis.pubsub()
-        await pubsub.subscribe(settings.REDIS_EVENT_CHANNEL)
+        pubsub.subscribe(PUBSUB_CHANNEL)
         try:
-            async for message in pubsub.listen():
-                if message["type"] == "message":
+            while True:
+                message = await loop.run_in_executor(None, pubsub.get_message, True, 1.0)
+                if message and message["type"] == "message":
                     data = message["data"]
                     if isinstance(data, bytes):
                         data = data.decode()
                     yield f"data: {data}\n\n"
+                else:
+                    await asyncio.sleep(0.1)
         except asyncio.CancelledError:
             pass
         finally:
-            await pubsub.unsubscribe(settings.REDIS_EVENT_CHANNEL)
-            await pubsub.close()
+            pubsub.unsubscribe(PUBSUB_CHANNEL)
 
     return StreamingResponse(
         event_generator(),
         media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Accel-Buffering": "no",   # required for nginx proxying SSE
-        },
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
 
 
-# ── Background Redis consumer (triggers healer) ───────────────────────────────
-
 async def _redis_event_consumer():
-    """
-    Listens to the SAME Redis channel as the SSE stream.
-    When the monitor publishes an incident event it calls healer.heal().
-    This is the glue between M1's monitor and M1's healer.
-    """
+    import asyncio
+    from autoheal.utils.redis_client import get_client, PUBSUB_CHANNEL
     healer = Healer()
-    redis = await get_redis()
+    loop = asyncio.get_event_loop()
+    redis = get_client()
     pubsub = redis.pubsub()
-    await pubsub.subscribe(settings.REDIS_EVENT_CHANNEL)
+    pubsub.subscribe(PUBSUB_CHANNEL)
 
-    async for message in pubsub.listen():
-        if message["type"] != "message":
-            continue
+    while True:
         try:
-            raw = message["data"]
-            if isinstance(raw, bytes):
-                raw = raw.decode()
-            event = json.loads(raw)
-
-            # Only act on new incidents detected by the monitor
-            if event.get("type") == "incident_detected":
-                container_id = event["container_id"]
-                asyncio.create_task(healer.heal(container_id, event))
-
-        except (json.JSONDecodeError, KeyError) as exc:
-            print(f"[consumer] Bad event payload: {exc}")
+            message = await loop.run_in_executor(None, pubsub.get_message, True, 1.0)
+            if message and message["type"] == "message":
+                raw = message["data"]
+                if isinstance(raw, bytes):
+                    raw = raw.decode()
+                event = json.loads(raw)
+                if event.get("type") == "incident_detected":
+                    container_id = event["container_id"]
+                    healer.heal(container_id)
+            else:
+                await asyncio.sleep(0.1)
+        except asyncio.CancelledError:
+            break
         except Exception as exc:
-            print(f"[consumer] Unexpected error: {exc}")
+            print(f"[consumer] Error: {exc}")
+            await asyncio.sleep(1)
+# ── Background Redis consumer (triggers healer) ───────────────────────────────
 
 
 # ── Health check ──────────────────────────────────────────────────────────────
