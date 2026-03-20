@@ -3,7 +3,6 @@ import time
 import threading
 import requests
 import docker
-
 from autoheal.utils.redis_client import publish_event, set_cooldown, is_on_cooldown
 
 # Map service names to their health check URLs
@@ -14,7 +13,6 @@ SERVICES = {
     "payments-api": "http://payments-api:5000/health",
     "worker": "http://worker:5000/health",
 }
-
 
 def detect_issues() -> list[dict]:
     issues = []
@@ -31,6 +29,23 @@ def detect_issues() -> list[dict]:
     return issues
 
 
+def publish_status_snapshot():
+    """Publish current health of every service so the dashboard stays updated."""
+    for name, url in SERVICES.items():
+        try:
+            resp = requests.get(url, timeout=3)
+            status = "healthy" if resp.status_code == 200 else "down"
+        except:
+            status = "down"
+
+        publish_event({
+            "type": "status_update",
+            "service": name,
+            "status": status,
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        })
+
+
 def run_monitor_loop(interval: int = 10):
     print(f"[MONITOR] Starting polling loop (every {interval}s)")
     while True:
@@ -38,6 +53,7 @@ def run_monitor_loop(interval: int = 10):
             issues = detect_issues()
             if not issues:
                 print("[MONITOR] All containers healthy.")
+
             for container in issues:
                 name = container["Names"]
                 status = container["Status"]
@@ -55,8 +71,13 @@ def run_monitor_loop(interval: int = 10):
                 }
                 publish_event(event)
                 set_cooldown(name)
+
+            # Always publish a full status snapshot so dashboard cards stay live
+            publish_status_snapshot()
+
         except Exception as e:
             print(f"[MONITOR] Error during poll: {e}")
+
         time.sleep(interval)
 
 

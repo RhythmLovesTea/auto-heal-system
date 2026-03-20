@@ -47,10 +47,10 @@ function ServiceCard({ name, status, cpu, mem, extra }) {
 
 function TimelineEvent({ event }) {
   const dotColor = {
-    error:    "#ef4444",
-    healing:  "#38bdf8",
-    resolved: "#22c55e",
-    warning:  "#f59e0b",
+    error:             "#ef4444",
+    healing:           "#38bdf8",
+    resolved:          "#22c55e",
+    warning:           "#f59e0b",
     incident_detected: "#ef4444",
   }[event.type] || "#7d8590";
   const glowStyle = (event.type === "error" || event.type === "incident_detected")
@@ -119,62 +119,64 @@ export default function App() {
 
       es.onopen = () => setConnected(true);
 
-      // Catch plain data: events (incident_detected from monitor)
       es.onmessage = (e) => {
         try {
           const data = JSON.parse(e.data);
-          setEvents(prev => [data, ...prev].slice(0, 50));
+
+          // status_update: silently update card color, never show in timeline
+          if (data.type === "status_update") {
+            setServices(prev => ({
+              ...prev,
+              [data.service]: { ...prev[data.service], status: data.status },
+            }));
+            setStats(prev => {
+              const healthyCount = SERVICE_NAMES.filter(n =>
+                n === data.service ? data.status === "healthy" : prev[n]?.status === "healthy"
+              ).length;
+              return { ...prev, healthyCount };
+            });
+            return;
+          }
+
+          // incident_detected: show in timeline + mark card red
           if (data.type === "incident_detected") {
+            setEvents(prev => [data, ...prev].slice(0, 50));
             setStats(prev => ({ ...prev, total: prev.total + 1, active: prev.active + 1 }));
             setServices(prev => ({
               ...prev,
               [data.service]: { ...prev[data.service], status: "down" },
             }));
+            return;
           }
+
+          // resolved: show in timeline + mark card green
+          if (data.type === "resolved") {
+            setEvents(prev => [data, ...prev].slice(0, 50));
+            setServices(prev => ({
+              ...prev,
+              [data.service]: { ...prev[data.service], status: "healthy" },
+            }));
+            setStats(prev => ({
+              ...prev,
+              healed: prev.healed + 1,
+              active: Math.max(0, prev.active - 1),
+            }));
+            return;
+          }
+
         } catch {}
       };
 
       es.onerror = () => {
         setConnected(false);
         es.close();
-        retryTimeout = setTimeout(connect, 3000); // retry every 3s
+        retryTimeout = setTimeout(connect, 3000);
       };
-
-      es.addEventListener("status", (e) => {
-        const data = JSON.parse(e.data);
-        const updated = {};
-        data.services.forEach(svc => {
-          updated[svc.name] = { status: svc.status, cpu: svc.cpu_percent, mem: svc.mem_percent, extra: svc.extra ?? null };
-        });
-        setServices(prev => ({ ...prev, ...updated }));
-        const healthyCount = Object.values(updated).filter(s => s.status === "healthy").length;
-        setStats(prev => ({ ...prev, healthyCount }));
-      });
-
-      es.addEventListener("incident", (e) => {
-        const data = JSON.parse(e.data);
-        setEvents(prev => [data, ...prev].slice(0, 50));
-        setStats(prev => ({ ...prev, total: prev.total + 1, active: prev.active + 1 }));
-        setServices(prev => ({ ...prev, [data.service]: { ...prev[data.service], status: "down" } }));
-      });
 
       es.addEventListener("healing", (e) => {
         const data = JSON.parse(e.data);
         setEvents(prev => [data, ...prev].slice(0, 50));
         setServices(prev => ({ ...prev, [data.service]: { ...prev[data.service], status: "healing" } }));
-      });
-
-      es.addEventListener("resolved", (e) => {
-        const data = JSON.parse(e.data);
-        setEvents(prev => [data, ...prev].slice(0, 50));
-        setServices(prev => ({ ...prev, [data.service]: { ...prev[data.service], status: "healthy" } }));
-        setStats(prev => {
-          const newHealed = prev.healed + 1;
-          const newActive = Math.max(0, prev.active - 1);
-          const prevAvg = prev.avgHealTime ?? 0;
-          const newAvg = newHealed === 1 ? data.heal_time_seconds : Math.round((prevAvg * (newHealed - 1) + data.heal_time_seconds) / newHealed);
-          return { ...prev, healed: newHealed, active: newActive, avgHealTime: newAvg };
-        });
       });
     };
 
@@ -187,6 +189,7 @@ export default function App() {
     };
   }, []);
 
+  // ── Load initial incidents on mount ────────────────────────────────────────
   useEffect(() => {
     fetch(`${API_BASE}/api/incidents/?limit=20`)
       .then(r => r.json())

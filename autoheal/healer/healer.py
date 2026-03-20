@@ -1,4 +1,18 @@
 import docker
+import time
+import json
+from autoheal.utils.redis_client import get_client, PUBSUB_CHANNEL
+
+def publish_resolved(container_name: str):
+    """Tell the dashboard this service is back healthy."""
+    client = get_client()
+    event = {
+        "type": "resolved",
+        "service": container_name,
+        "message": f"{container_name} was auto-healed and is back healthy",
+        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }
+    client.publish(PUBSUB_CHANNEL, json.dumps(event))
 
 def get_full_container_name(short_name: str) -> str:
     client = docker.from_env()
@@ -14,10 +28,11 @@ def heal(container_name: str) -> bool:
         full_name = get_full_container_name(container_name)
         print(f"[HEAL] Resolved to: {full_name}")
         container = client.containers.get(full_name)
-        # Remove the fault flag before restarting
         container.exec_run("rm -f /tmp/unhealthy")
         container.restart()
         print(f"[HEAL] ✓ {full_name} restarted successfully.")
+        # Notify dashboard that service is back healthy
+        publish_resolved(container_name)
         return True
     except Exception as e:
         print(f"[HEAL] ✗ Failed to restart {container_name}: {e}")
