@@ -48,6 +48,9 @@ function ServiceCard({ name, status, onClick, selected }) {
         <div style={{ fontSize: 10, color: "#7d8590" }}><span style={{ color: "#58a6ff", fontFamily: "monospace" }}>CPU</span> —%</div>
         <div style={{ fontSize: 10, color: "#7d8590" }}><span style={{ color: "#58a6ff", fontFamily: "monospace" }}>MEM</span> —%</div>
       </div>
+      <div style={{ fontSize: 10, color: "#4b5563", marginTop: 6, fontFamily: "monospace" }}>
+        click to filter timeline
+      </div>
     </div>
   );
 }
@@ -86,7 +89,7 @@ function StatCard({ label, value, color, subtitle }) {
     <div style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: 10, padding: "14px 16px", flex: 1 }}>
       <div style={{ fontSize: 10, color: "#7d8590", fontFamily: "monospace", marginBottom: 6, textTransform: "uppercase", letterSpacing: 1 }}>{label}</div>
       <div style={{ fontSize: 28, fontWeight: 700, color, fontFamily: "monospace", lineHeight: 1 }}>{value ?? "—"}</div>
-      {subtitle && <div style={{ fontSize: 10, color: "#7d8590", marginTop: 4 }}>{subtitle}</div>}
+      {subtitle && <div style={{ fontSize: 10, color: "#4b5563", marginTop: 6, fontFamily: "monospace" }}>{subtitle}</div>}
     </div>
   );
 }
@@ -210,19 +213,26 @@ export default function App() {
 
       <div style={{ background: "#0d1117", minHeight: "100vh", color: "#e6edf3", padding: "16px 20px" }}>
 
+        {/* ── TOP BAR ── */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 20, paddingBottom: 14, borderBottom: "1px solid #21262d" }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+          <div>
             <div style={{ fontFamily: "monospace", fontSize: 20, fontWeight: 700 }}>
               auto<span style={{ color: "#22c55e" }}>heal</span>
-              <span style={{ color: "#7d8590", fontSize: 13, fontWeight: 400 }}> // ops</span>
+              <span style={{ color: "#7d8590", fontSize: 13, fontWeight: 400 }}> // self-healing infrastructure dashboard</span>
             </div>
+            <div style={{ fontSize: 10, color: "#4b5563", marginTop: 4, fontFamily: "monospace" }}>
+              monitors 5 services · detects faults · auto-restarts containers
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             {downCount > 0 && (
-              <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 6, padding: "3px 10px", fontSize: 11, color: "#ef4444", animation: "pulse 2s infinite" }}>
-                {downCount} service{downCount > 1 ? "s" : ""} down
+              <div style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 6, padding: "4px 12px", fontSize: 11, color: "#ef4444", animation: "pulse 2s infinite" }}>
+                ⚠ {downCount} service{downCount > 1 ? "s" : ""} down
               </div>
             )}
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ fontSize: 11, color: "#7d8590", fontFamily: "monospace", background: "#161b22", border: "1px solid #21262d", borderRadius: 20, padding: "4px 12px" }}>
+              backend: <span style={{ color: connected ? "#22c55e" : "#ef4444" }}>{connected ? "online" : "offline"}</span>
+            </div>
             <div style={{ fontSize: 11, color: "#7d8590", fontFamily: "monospace" }}>
               {now.toLocaleTimeString("en-GB", { timeZone: "UTC" })} UTC
             </div>
@@ -233,33 +243,58 @@ export default function App() {
           </div>
         </div>
 
+        {/* ── STATS ── */}
         <div style={{ display: "flex", gap: 10, marginBottom: 16 }}>
-          <StatCard label="incidents today" value={stats.total} color="#ef4444" />
-          <StatCard label="auto-healed" value={stats.healed} color="#22c55e" />
-          <StatCard label="in progress" value={stats.active} color="#38bdf8" />
-          <StatCard label="services healthy" value={`${stats.healthyCount}/5`} color={stats.healthyCount === 5 ? "#22c55e" : "#f59e0b"} subtitle={stats.healthyCount === 5 ? "all systems go" : `${5 - stats.healthyCount} degraded`} />
+          <StatCard label="incidents today"  value={stats.total}  color="#ef4444" subtitle="faults detected" />
+          <StatCard label="auto-healed"      value={stats.healed} color="#22c55e" subtitle="resolved automatically" />
+          <StatCard label="in progress"      value={stats.active} color="#38bdf8" subtitle="healing now" />
+          <StatCard label="services healthy" value={`${stats.healthyCount}/5`} color={stats.healthyCount === 5 ? "#22c55e" : "#f59e0b"} subtitle={stats.healthyCount === 5 ? "all systems go" : `${5 - stats.healthyCount} need attention`} />
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 16 }}>
+        {/* ── SERVICE CARDS ── */}
+        <div style={{ fontSize: 10, color: "#4b5563", fontFamily: "monospace", marginBottom: 8 }}>
+          monitored services — click a card to filter the timeline
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5, 1fr)", gap: 10, marginBottom: 10 }}>
           {SERVICE_NAMES.map(name => (
             <ServiceCard key={name} name={name} status={services[name]?.status || "unknown"} selected={selectedService === name} onClick={() => setSelectedService(prev => prev === name ? null : name)} />
           ))}
         </div>
 
+        {/* ── STATUS LEGEND ── */}
+        <div style={{ display: "flex", gap: 20, marginBottom: 16, paddingLeft: 4 }}>
+          {[
+            { color: "#22c55e", label: "healthy" },
+            { color: "#ef4444", label: "down — heal triggered" },
+            { color: "#38bdf8", label: "healing in progress" },
+            { color: "#6b7280", label: "unknown" },
+          ].map(({ color, label }) => (
+            <div key={label} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 8, height: 8, borderRadius: "50%", background: color }} />
+              <span style={{ fontSize: 10, color: "#7d8590", fontFamily: "monospace" }}>{label}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* ── FILTER BAR ── */}
         {selectedService && (
           <div style={{ background: "rgba(88,166,255,0.05)", border: "1px solid rgba(88,166,255,0.2)", borderRadius: 8, padding: "8px 14px", marginBottom: 12, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={{ fontSize: 12, color: "#58a6ff", fontFamily: "monospace" }}>filtering timeline for: <strong>{selectedService}</strong></span>
+            <span style={{ fontSize: 12, color: "#58a6ff", fontFamily: "monospace" }}>
+              showing timeline for: <strong>{selectedService}</strong>
+            </span>
             <button onClick={() => setSelectedService(null)} style={{ background: "transparent", border: "none", color: "#7d8590", cursor: "pointer", fontSize: 12 }}>clear ×</button>
           </div>
         )}
 
+        {/* ── TIMELINE ── */}
         <div style={{ background: "#161b22", border: "1px solid #21262d", borderRadius: 10, overflow: "hidden" }}>
           <div style={{ padding: "10px 16px", borderBottom: "1px solid #21262d", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
               <span style={{ fontSize: 11, color: "#7d8590", fontFamily: "monospace", textTransform: "uppercase", letterSpacing: 1 }}>incident timeline</span>
               {filteredEvents.length > 0 && (
-                <span style={{ fontSize: 10, background: "rgba(88,166,255,0.1)", color: "#58a6ff", padding: "1px 7px", borderRadius: 10, border: "1px solid rgba(88,166,255,0.2)" }}>{filteredEvents.length}</span>
+                <span style={{ fontSize: 10, background: "rgba(88,166,255,0.1)", color: "#58a6ff", padding: "1px 7px", borderRadius: 10, border: "1px solid rgba(88,166,255,0.2)" }}>{filteredEvents.length} events</span>
               )}
+              <span style={{ fontSize: 10, color: "#4b5563", fontFamily: "monospace" }}>— real-time log of all detected faults and heals</span>
             </div>
             <div style={{ display: "flex", gap: 6 }}>
               {["all", "incidents", "resolved"].map(f => (
@@ -267,16 +302,30 @@ export default function App() {
               ))}
             </div>
           </div>
+
           <div style={{ maxHeight: 380, overflowY: "auto" }}>
             {filteredEvents.length === 0 ? (
               <div style={{ padding: "40px 0", textAlign: "center", color: "#7d8590", fontSize: 12 }}>
                 <div style={{ fontSize: 24, marginBottom: 8 }}>✓</div>
                 no incidents — all systems healthy
+                <div style={{ fontSize: 10, color: "#4b5563", marginTop: 8, fontFamily: "monospace" }}>
+                  inject a fault to see auto-healing in action
+                </div>
               </div>
             ) : (
               filteredEvents.map((evt, i) => <TimelineEvent key={evt._id ?? i} event={evt} isNew={newEventIds.has(evt._id)} />)
             )}
           </div>
+        </div>
+
+        {/* ── FOOTER ── */}
+        <div style={{ marginTop: 16, paddingTop: 12, borderTop: "1px solid #21262d", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <span style={{ fontSize: 10, color: "#4b5563", fontFamily: "monospace" }}>
+            autoheal — monitors every 10s · heals via docker restart · persists to sqlite
+          </span>
+          <span style={{ fontSize: 10, color: "#4b5563", fontFamily: "monospace" }}>
+            api docs → <span style={{ color: "#58a6ff" }}>localhost:8000/docs</span>
+          </span>
         </div>
 
       </div>
